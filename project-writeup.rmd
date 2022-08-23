@@ -1,0 +1,313 @@
+---
+title: "Case Study: Bike-share Analysis"
+author: "Elyzza Bobadilla"
+date: '2022-05-16'
+output:
+  html_document: default
+  pdf_document: default
+---
+**NOTE:** This project was originally published on Kaggle.
+
+### About This Case Study
+
+This project served as my capstone project for the **Google Data Analytics Professional Certificate**. For the purposes of this case study, I work for a fictional bike-share company called **Cyclistic**, based in Chicago, IL, as a junior data analyst on the marketing analytics team.
+
+
+#### Background
+
+The director of marketing believes the company's future success depends on maximizing the number of annual memberships. The marketing annalytics team thus wants to **understand how casual riders and annual members use Cyclistic bikes differently** (I am assigned this task) to provide insights that, once approved by the executive team, will **inform a new marketing strategy to convert casual riders into annual members**.
+
+The current marketing strategy promotes a flexible pricing plan - single-ride passes, full-day passes, and annual memberships - with those who purchase single- or full-ride passes being referred to as casual riders. Cyclistic members are those with annual memberships. The marketing director believes there is a good chance to convert casual riders into annual members since casual riders are already aware of, and use, the Cyclistic program.
+
+For this project, I use **RStudio** for its ability to handle large data sets and visualization capabilities.
+
+**Please note**: I use [public data](https://divvy-tripdata.s3.amazonaws.com/index.html) collected and made available by Motivate International Inc. ([license](http://https//ride.divvybikes.com/data-license-agreement)); this data is assumed to be vetted and fit for use in analysis. Furthermore, the analysis is based on the Divvy case study "'Sophisticated, Clear, and Polished’: Divvy and Data Visualization" written by Kevin Hartman (found [here](https://artscience.blog/home/divvy-dataviz-case-study)).
+
+
+### Getting Started
+
+#### RStudio Environment
+
+To set up the R environment, the "tidyverse" and "lubridate" packages are loaded - "tidyverse" for most of the coding and "lubridate" for its date functions (to be used later).
+
+```{r RStudio set up, include=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+
+#### Loading in the Data
+
+After setting up the R environment, I load data from the past 12 months (May 2021 - April 2022) to process, clean, and analyze.
+
+```{r load data, include=FALSE}
+May21 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202105-divvy-tripdata.csv")
+Jun21 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202106-divvy-tripdata.csv")
+Jul21 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202107-divvy-tripdata.csv")
+Aug21 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202108-divvy-tripdata.csv")
+Sep21 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202109-divvy-tripdata.csv")
+Oct21 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202110-divvy-tripdata.csv")
+Nov21 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202111-divvy-tripdata.csv")
+Dec21 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202112-divvy-tripdata.csv")
+
+Jan22 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202201-divvy-tripdata.csv")
+Feb22 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202202-divvy-tripdata.csv")
+Mar22 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202203-divvy-tripdata.csv")
+Apr22 <- read_csv("~/Divvy-tripdata/Divvy-trip-data-full-year/202204-divvy-tripdata.csv")
+```
+
+
+### Preparing the Data
+
+#### Processing, Combining, Cleaning
+
+After checking the data for inconsistencies in column names or data types (this code isn't included), I join the data sets together into a new data frame.
+```{r}
+# join data sets
+full_year <- bind_rows(May21,Jun21,Jul21,Aug21,Sep21,Oct21,Nov21,Dec21,Jan22,Feb22,Mar22,Apr22)
+```
+
+Next, I **drop** several columns (specifically, any latitude and longitude columns since they are not relevant for this study), and **add** new columns (date, month, day, year, weekday, ride length). This cleaning makes the data easier to work with.
+```{r}
+# remove latitude and longitude fields
+full_yr_v1 <- full_year %>%  
+  select(-c(start_lat, start_lng, end_lat, end_lng))
+
+# add columns for date, month, day, year, and ride duration to aggregate data instead of working with each ride (would be too granular)
+full_yr_v1$date <- as.Date(full_yr_v1$started_at) # remove time stamp & create a new column
+full_yr_v1$month <- format(as.Date(full_yr_v1$date), "%m")
+full_yr_v1$day <- format(as.Date(full_yr_v1$date), "%d")
+full_yr_v1$year <- format(as.Date(full_yr_v1$date), "%Y")
+full_yr_v1$weekday <- format(as.Date(full_yr_v1$date), "%A")
+full_yr_v1$ride_length <- difftime(full_yr_v1$ended_at, full_yr_v1$started_at)
+```
+
+The `ride_length field` is converted from a character data type into a numeric data type so it can be used in later calculations. The values in this column are still in seconds.
+```{r}
+full_yr_v1$ride_length <- as.numeric(as.character(full_yr_v1$ride_length)) # convert column from char type to a numeric
+is.numeric(full_yr_v1$ride_length) # check to see if column data type is a numeric - if yes, will return boolean TRUE
+```
+
+Finally, certain rows are dropped for one of the following reasons:
+
+* ride_length cannot be negative ("bad" data point),
+* start_station_name is "HR QR" (this indicates that the bike was taken out of service), or
+* there is a null/NA value in the row (I want to use complete data only).
+```{r}
+full_yr_v2 <- full_yr_v1[!(full_yr_v1$ride_length<0),] # omit rows where ride length is negative
+full_yr_v2 <- full_yr_v2[full_yr_v2$start_station_name!="HQ QR",] # omit rows where start_station_name is "HQ QR"
+full_yr_v2 <- na.omit(full_yr_v2) # omit incomplete rows of data
+```
+
+### Analysis
+
+I run the following code on the `ride_length` column to get statistical information like the mean, median, max, and min.
+
+```{r}
+summary(full_yr_v2$ride_length)
+```
+
+#### Grouping by Member Type
+
+I need to see how casual users and annual members compare so I group the user types and run functions for the mean, median, min, and max using data from the `ride_length` column.
+
+```{r}
+aggregate(full_yr_v2$ride_length ~ full_yr_v2$member_casual, FUN = mean)
+```
+
+```{r}
+aggregate(full_yr_v2$ride_length ~ full_yr_v2$member_casual, FUN = median)
+```
+
+```{r}
+aggregate(full_yr_v2$ride_length ~ full_yr_v2$member_casual, FUN = max)
+```
+
+```{r}
+aggregate(full_yr_v2$ride_length ~ full_yr_v2$member_casual, FUN = min)
+```
+
+#### Average Trip Duration and Weekday
+
+Likewise, I want to see how user types compare when looking at the average trip duration per weekday. To start, I order the weekdays so that they display in a logical order.
+
+```{r}
+full_yr_v2$weekday <- ordered(full_yr_v2$weekday, levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+aggregate(full_yr_v2$ride_length ~ full_yr_v2$member_casual + full_yr_v2$weekday, FUN = mean)
+```
+
+Then, I create a visual to view and identify any differences between the two user types' average trip durations, with respect to the days of the week.
+```{r echo=FALSE}
+# Average Trip Duration: User Type vs. Weekday
+full_yr_v2%>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n(),average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) + geom_col(position = "dodge") +
+  labs(title="Average Trip Duration by User Type and Weekday", x="Weekday",y="Ride Length (seconds)", fill="User Type",
+       caption="Data from Motivate International Inc., Analyzed by Elyzza Bobadilla", subtitle="May 2021 - April 2022")
+```
+
+#### Average Trip Duration Over the Past 12 months
+
+To see how users compare on a month-by-month basis, I order the months in the `month` column like I did previously for weekdays, so they display logically by calendar month in a visualization.
+
+```{r}
+full_yr_v2$month <- ordered(full_yr_v2$month, levels=c("05","06","07","08","09","10","11","12","01","02","03","04"))
+```
+
+A visualization makes it easier to see any differences in user type and average trip duration over the past 12 months.
+```{r echo=FALSE}
+# Average Trip Duration: User Type vs. Month
+full_yr_v2 %>%
+  group_by(member_casual, month) %>% 
+  summarise(number_of_rides = n(), average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, month)  %>% 
+  ggplot(aes(x = month, y = average_duration, fill = member_casual)) + geom_col(position = "dodge") +
+  labs(title="Average Trip Duration by User Type and Month", x="Month",y="Ride Length (seconds)", fill="User Type", subtitle = "May 2021 - April 2022",
+       caption="Data from Motivate International Inc., Analyzed by Elyzza Bobadilla")
+```
+
+#### Busiest Weekdays
+
+I also want to see which weekdays saw the most rides from each user type so I visualize this information for quicker, easier understanding.
+```{r echo=FALSE}
+# Number of Rides: User Type vs. Weekday
+full_yr_v2%>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n(),average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) + geom_col(position = "dodge") +
+  labs(title="Number of Rides by User Type and Weekday", x="Weekday",y="Ride Count", fill="User Type", caption="Data from Motivate International Inc., Analyzed by Elyzza Bobadilla",
+       subtitle="May 2021 - April 2022") + annotate("text", x=4, y=425000, label="Annual members mainly biked midweek.")
+```
+
+#### Number of Rides Over the Past 12 Months
+
+Although it's handy to see what days are most popular with certain users, months can also serve as a good indicator of when to push out certain advertising campaigns. I generate a visualization to see how the number of rides compares for each user type over the past 12 months.
+```{r echo=FALSE}
+# Number of Rides: User Type vs. Month
+full_yr_v2 %>%
+  group_by(member_casual, month) %>% 
+  summarise(number_of_rides = n(), average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, month)  %>% 
+  ggplot(aes(x = month, y = number_of_rides, fill = member_casual)) + geom_col(position = "dodge") +
+  labs(title="Number of Rides by User Type and Month", x="Month",y="Ride Count", fill="User Type", subtitle = "May 2021 - April 2022", caption="Data from Motivate International Inc., Analyzed by Elyzza Bobadilla")
+```
+
+
+#### Most Popular Stations
+
+The last piece of data that I explore is where users mostly start and end their rides.
+
+##### Casual Riders
+
+The following data frames display the top 10 most popular start and end stations for casual riders.
+```{r}
+# Casual riders' most popular start stations
+fy <- full_yr_v2 %>%
+  filter(member_casual=="casual") %>%
+  group_by(start_station_name) %>%
+  count(start_station_name, sort=TRUE)
+  
+head(fy, 10)
+```
+
+```{r}
+# Casual riders' most popular end stations
+fy1 <- full_yr_v2 %>%
+  filter(member_casual=="casual") %>%
+  group_by(end_station_name) %>%
+  count(end_station_name, sort=TRUE)
+  
+head(fy1, 10)
+```
+
+If I look at each trip as a **whole**, however, most trips that casual riders took were from Streeter Dr & Grand Ave and back to Streeter Dr & Grand Ave. This reinforces the results in the previous data frames.
+```{r include=FALSE}
+full_yr_stat <- full_yr_v2 %>%
+  select(member_casual, start_station_name, end_station_name) %>%
+  unite(trip_start_end, c("start_station_name", "end_station_name"))
+```
+
+```{r}
+full_yr_stat1 <- full_yr_stat %>%
+  filter(member_casual=="casual") %>%
+  count(trip_start_end, sort=TRUE)
+
+head(full_yr_stat1, 10)
+```
+
+##### Annual Members
+
+Like the data frames earlier, these data frames display the top 10 start and end stations for annual members.
+```{r}
+# Members' most popular start stations
+fy2 <- full_yr_v2 %>%
+  filter(member_casual=="member") %>%
+  group_by(start_station_name) %>%
+  count(start_station_name, sort=TRUE)
+
+head(fy2, 10)
+```
+
+```{r}
+# Members' most popular end stations
+fy3 <- full_yr_v2 %>%
+  filter(member_casual=="member") %>%
+  group_by(end_station_name) %>%
+  count(end_station_name, sort=TRUE)
+
+head(fy3, 10)
+```
+
+Looking at member trips as a **whole**, I see that many members' trips started at Ellis Ave & 60th St and ended at Ellis Ave & 55th St. This doesn't seem to reinforce the previously generated data frames.
+
+```{r}
+full_yr_stat2 <- full_yr_stat %>%
+  filter(member_casual=="member") %>%
+  count(trip_start_end, sort=TRUE)
+
+head(full_yr_stat2, 10)
+```
+
+### Findings and Recommendations
+From the analysis, I learn the following from the data:
+
+*Average Trip Duration*
+
+* Casual users appeared to take longer trips than annual members.
+* Both user groups took longer trips on the weekends (Saturday and Sunday).
+* The ride length of annual members varied less than that of casual users.
+
+*Number of Rides*
+
+* On a weekday basis, casual users biked the most on Saturday and Sunday, while annual members biked the most during the weekdays, peaking near the middle of the week.
+* In the past 12 months, both user groups took more rides in the summer and fall months than in the fall and winter months.
+
+*Bike Stations*
+
+* Most casual users began rides at Streeter Dr & Grand Ave.
+* Likewise, most casual users ended rides at Streeter Dr & Grand Ave.
+
+
+#### Top Three Recommendations
+
+For the new marketing strategy, I would recommend to:
+
+* Focus general advertising on the weekends as most casual users are active these days.
+* Create a special ad campaign for the summer/fall months as these months are the most popular with casual users.
+* Promote annual memberships around the most popular starting and ending stations for casual riders.
+
+*Further Exploration*
+
+I could possibly expand on my findings by:
+
+* Analyzing the hour of day that each trip began, or
+* Investigating if a trial or referral program would be doable and of interest among Cyclistic bike users; this would call for conducting user surveys and perhaps analyzing financial data.
+
+*Additional Notes*
+
+* I filtered and calculated average trip duration per user type for each season but did not gain any additional insights.
+* The summer/fall months mentioned are specifically June, July, August, September, October, and November.
